@@ -1,0 +1,61 @@
+{
+  "uid": "stm-overview",
+  "title": "Student Task Manager - Overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Backend status (1 = up)",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "up{job=\"student-task-backend\"}" }]
+    },
+    {
+      "id": 2, "type": "stat", "title": "Pending tasks",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "student_tasks_total{status=\"pending\"}" }]
+    },
+    {
+      "id": 3, "type": "stat", "title": "Completed tasks",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "student_tasks_total{status=\"completed\"}" }]
+    },
+    {
+      "id": 4, "type": "stat", "title": "Tasks created (since start)",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "student_tasks_created_total" }]
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Request rate by route (req/s)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (method, route) (rate(http_request_duration_seconds_count[1m]))", "legendFormat": "{{method}} {{route}}" }]
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "p95 latency (seconds)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))", "legendFormat": "p95" }]
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Error responses (4xx / 5xx per second)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(http_request_duration_seconds_count{status=~\"4..\"}[1m]))", "legendFormat": "4xx" },
+        { "refId": "B", "expr": "sum(rate(http_request_duration_seconds_count{status=~\"5..\"}[1m]))", "legendFormat": "5xx" }
+      ]
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "Process memory (bytes)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "process_resident_memory_bytes{job=\"student-task-backend\"}", "legendFormat": "RSS" }]
+    }
+  ]
+}

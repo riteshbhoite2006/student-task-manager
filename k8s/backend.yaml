@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: task-data
+  namespace: student-task-manager
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: student-task-manager
+spec:
+  replicas: 1            # JSON-file storage => keep at 1 (use a database to scale out)
+  strategy:
+    type: Recreate       # RWO volume can't be mounted by two pods at once
+  selector:
+    matchLabels: { app: backend }
+  template:
+    metadata:
+      labels: { app: backend }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: /metrics
+    spec:
+      securityContext:
+        fsGroup: 1000    # 'node' user in the image
+      containers:
+        - name: backend
+          image: ghcr.io/YOUR-USER/student-task-manager-backend:latest   # <- change
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 3000 }]
+          env:
+            - { name: DATA_FILE, value: /app/data/tasks.json }
+          volumeMounts:
+            - { name: data, mountPath: /app/data }
+          readinessProbe:
+            httpGet: { path: /health, port: 3000 }
+            initialDelaySeconds: 3
+          livenessProbe:
+            httpGet: { path: /health, port: 3000 }
+            initialDelaySeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 250m, memory: 160Mi }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: task-data }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: student-task-manager
+spec:
+  selector: { app: backend }
+  ports: [{ port: 3000, targetPort: 3000 }]

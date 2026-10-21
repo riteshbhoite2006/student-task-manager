@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Student Task Manager</title>
+  <style>
+    :root { --bg:#f4f6fb; --card:#fff; --text:#1f2937; --muted:#6b7280; --line:#e5e7eb;
+            --brand:#4f46e5; --ok:#16a34a; --warn:#d97706; --bad:#dc2626; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#0f172a; --card:#1e293b; --text:#e5e7eb; --muted:#94a3b8; --line:#334155; }
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,sans-serif; }
+    main { max-width:720px; margin:0 auto; padding:2rem 1rem 4rem; }
+    h1 { margin:0 0 .25rem; }
+    .sub { color:var(--muted); margin:0 0 1.25rem; font-size:.9rem; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:1rem; margin-bottom:1rem; }
+    .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:.75rem; }
+    .stat { text-align:center; }
+    .stat b { display:block; font-size:1.6rem; }
+    .stat span { color:var(--muted); font-size:.8rem; }
+    form { display:grid; grid-template-columns:1fr 160px; gap:.5rem; }
+    form .full { grid-column:1 / -1; }
+    input { padding:.6rem .7rem; border:1px solid var(--line); border-radius:8px; background:transparent; color:inherit; font:inherit; }
+    button { font:inherit; cursor:pointer; border-radius:8px; border:1px solid var(--line); background:transparent; color:inherit; padding:.5rem .8rem; }
+    button.primary { background:var(--brand); color:#fff; border-color:var(--brand); }
+    .filters { display:flex; gap:.5rem; margin-bottom:1rem; }
+    .filters button.active { background:var(--brand); color:#fff; border-color:var(--brand); }
+    ul { list-style:none; margin:0; padding:0; }
+    li.task { display:flex; align-items:flex-start; gap:.75rem; padding:.75rem 0; border-bottom:1px solid var(--line); }
+    li.task:last-child { border-bottom:0; }
+    li.task .body { flex:1; min-width:0; }
+    li.task .title { font-weight:600; word-break:break-word; }
+    li.task.done .title { text-decoration:line-through; color:var(--muted); }
+    li.task .desc { color:var(--muted); font-size:.85rem; margin-top:.15rem; word-break:break-word; }
+    .badge { display:inline-block; font-size:.72rem; padding:.1rem .5rem; border-radius:99px; margin-top:.35rem; border:1px solid var(--line); color:var(--muted); }
+    .badge.overdue { color:var(--bad); border-color:var(--bad); }
+    .badge.today { color:var(--warn); border-color:var(--warn); }
+    .badge.done { color:var(--ok); border-color:var(--ok); }
+    #error { display:none; background:#fee2e2; color:#991b1b; padding:.6rem .8rem; border-radius:8px; margin-bottom:1rem; }
+    .empty { text-align:center; color:var(--muted); padding:1.5rem 0; }
+    footer { color:var(--muted); font-size:.75rem; text-align:center; margin-top:2rem; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>📚 Student Task Manager</h1>
+  <p class="sub">Keep track of assignments, deadlines, and what's done.</p>
+
+  <div id="error"></div>
+
+  <section class="card stats">
+    <div class="stat"><b id="s-total">0</b><span>Total</span></div>
+    <div class="stat"><b id="s-pending">0</b><span>Pending</span></div>
+    <div class="stat"><b id="s-done">0</b><span>Completed</span></div>
+  </section>
+
+  <section class="card">
+    <form id="add-form">
+      <input id="title" class="full" placeholder="Task title (e.g. Physics lab report)" maxlength="120" required />
+      <input id="description" placeholder="Notes (optional)" maxlength="500" />
+      <input id="deadline" type="date" aria-label="Deadline" />
+      <button class="primary full">Add task</button>
+    </form>
+  </section>
+
+  <div class="filters" id="filters">
+    <button data-filter="all" class="active">All</button>
+    <button data-filter="pending">Pending</button>
+    <button data-filter="completed">Completed</button>
+  </div>
+
+  <section class="card"><ul id="tasks"></ul></section>
+
+  <footer id="backend-status">Checking backend…</footer>
+</main>
+
+<script>
+  const API = "/api/tasks";
+  let tasks = [];
+  let filter = "all";
+  const $ = (id) => document.getElementById(id);
+
+  function showError(msg) {
+    const el = $("error");
+    el.textContent = msg;
+    el.style.display = msg ? "block" : "none";
+  }
+
+  async function api(method, url, body) {
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data.errors || [data.error || res.statusText]).join(", "));
+      }
+      showError("");
+      return res.status === 204 ? null : res.json();
+    } catch (e) {
+      showError("Something went wrong: " + e.message);
+      throw e;
+    }
+  }
+
+  const today = () => new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local time
+
+  function deadlineBadge(t) {
+    if (t.completed) return ["Completed", "done"];
+    if (!t.deadline) return null;
+    if (t.deadline < today()) return ["Overdue · " + t.deadline, "overdue"];
+    if (t.deadline === today()) return ["Due today", "today"];
+    return ["Due " + t.deadline, ""];
+  }
+
+  function render() {
+    const done = tasks.filter((t) => t.completed).length;
+    $("s-total").textContent = tasks.length;
+    $("s-done").textContent = done;
+    $("s-pending").textContent = tasks.length - done;
+
+    const visible = tasks
+      .filter((t) => filter === "all" || (filter === "completed") === t.completed)
+      .sort((a, b) =>
+        a.completed - b.completed ||
+        (a.deadline || "9999").localeCompare(b.deadline || "9999") ||
+        a.id - b.id);
+
+    const list = $("tasks");
+    list.replaceChildren();
+    if (!visible.length) {
+      const li = document.createElement("li");
+      li.className = "empty";
+      li.textContent = "No tasks here yet.";
+      list.appendChild(li);
+      return;
+    }
+
+    for (const t of visible) {
+      const li = document.createElement("li");
+      li.className = "task" + (t.completed ? " done" : "");
+
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = t.completed;
+      cb.setAttribute("aria-label", "Mark complete");
+      cb.onchange = async () => { await api("PATCH", `${API}/${t.id}`, { completed: cb.checked }); load(); };
+
+      const body = document.createElement("div");
+      body.className = "body";
+      const title = document.createElement("div");
+      title.className = "title";
+      title.textContent = t.title;
+      body.appendChild(title);
+      if (t.description) {
+        const d = document.createElement("div");
+        d.className = "desc";
+        d.textContent = t.description;
+        body.appendChild(d);
+      }
+      const badge = deadlineBadge(t);
+      if (badge) {
+        const b = document.createElement("span");
+        b.className = "badge " + badge[1];
+        b.textContent = badge[0];
+        body.appendChild(b);
+      }
+
+      const del = document.createElement("button");
+      del.textContent = "Delete";
+      del.onclick = async () => { await api("DELETE", `${API}/${t.id}`); load(); };
+
+      li.append(cb, body, del);
+      list.appendChild(li);
+    }
+  }
+
+  async function load() {
+    try { tasks = await api("GET", API); render(); } catch {}
+  }
+
+  $("add-form").onsubmit = async (e) => {
+    e.preventDefault();
+    await api("POST", API, {
+      title: $("title").value,
+      description: $("description").value,
+      deadline: $("deadline").value || null,
+    });
+    e.target.reset();
+    load();
+  };
+
+  $("filters").onclick = (e) => {
+    if (!e.target.dataset.filter) return;
+    filter = e.target.dataset.filter;
+    document.querySelectorAll("#filters button").forEach((b) => b.classList.toggle("active", b === e.target));
+    render();
+  };
+
+  fetch("/health").then((r) => r.json())
+    .then((d) => $("backend-status").textContent = "Backend status: " + d.status)
+    .catch(() => $("backend-status").textContent = "Backend status: unreachable");
+
+  load();
+</script>
+</body>
+</html>

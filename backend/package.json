@@ -1,0 +1,15 @@
+{
+  "name": "student-task-manager-backend",
+  "version": "1.0.0",
+  "description": "REST API for the Student Task Manager",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "prom-client": "^15.1.3"
+  }
+}

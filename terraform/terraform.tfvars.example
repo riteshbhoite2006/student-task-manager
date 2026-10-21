@@ -1,0 +1,5 @@
+key_name     = "my-ec2-keypair"
+admin_cidr   = "203.0.113.7/32"          # curl ifconfig.me  -> add /32
+repo_url     = "https://github.com/YOUR-USER/student-task-manager.git"
+image_prefix = "ghcr.io/your-user/student-task-manager"
+grafana_password = "pick-a-strong-password"

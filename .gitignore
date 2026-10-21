@@ -1,0 +1,6 @@
+node_modules/
+backend/data/
+.env
+terraform/.terraform/
+terraform/*.tfstate*
+terraform/terraform.tfvars

@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: Student Task Manager
+    folder: ""
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

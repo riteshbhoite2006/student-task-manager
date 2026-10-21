@@ -1,0 +1,26 @@
+groups:
+  - name: student-task-manager
+    rules:
+      - alert: BackendDown
+        expr: up{job="student-task-backend"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "Backend is down"
+          description: "Prometheus cannot scrape the Student Task Manager API."
+
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_request_duration_seconds_count{status=~"5.."}[5m]))
+            / sum(rate(http_request_duration_seconds_count[5m])) > 0.05
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "More than 5% of requests are failing (5xx)"
+
+      - alert: SlowRequests
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 0.5
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "95th percentile latency is above 500ms"

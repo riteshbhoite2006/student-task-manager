@@ -1,0 +1,107 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  test:
+    name: Test backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package.json
+      - run: npm install
+        working-directory: backend
+      - run: npm test
+        working-directory: backend
+
+  smoke-test:
+    name: Build images & smoke test
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the full stack
+        run: docker compose up --build -d
+      - name: Wait for the app and check endpoints
+        run: |
+          for i in $(seq 1 20); do
+            curl -fs http://localhost:8080/health && break || sleep 3
+          done
+          curl -fs http://localhost:8080/health
+          curl -fs -X POST http://localhost:8080/api/tasks \
+            -H 'Content-Type: application/json' -d '{"title":"CI smoke test"}'
+          curl -fs http://localhost:8080/api/tasks | grep "CI smoke test"
+          curl -fs http://localhost:9090/-/ready
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs
+      - run: docker compose down -v
+
+  publish:
+    name: Push images to GHCR
+    needs: smoke-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lowercase owner (GHCR requires lowercase)
+        run: echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build & push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/student-task-manager-backend:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/student-task-manager-backend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build & push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/student-task-manager-frontend:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/student-task-manager-frontend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to server
+    needs: publish
+    # Enable by setting repo variable DEPLOY_ENABLED=true and adding the secrets below
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ubuntu
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /opt/student-task-manager
+            git pull --ff-only
+            docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml up -d
+            docker image prune -f
